@@ -18,33 +18,24 @@ db_config = {
     'password': os.environ.get('MYSQL_PASSWORD'),
     'database': os.environ.get('MYSQL_DB'),
     'cursorclass': pymysql.cursors.DictCursor,
-    # 'ssl': {'ca': '/opt/render/project/src/aiven-ca.pem'},
-    'ssl': {'ca': 'aiven-ca.pem'},
-    'ssl': {'ca': None, 'check_hostname': False}
-
-
-
+    'ssl': {'ca': None, 'check_hostname': False}  # Adjust for Aiven if needed
 }
 
-# Debug: Print MySQL configuration
+# Debug print
 print("MYSQL_HOST:", db_config['host'])
 print("MYSQL_PORT:", db_config['port'])
 print("MYSQL_USER:", db_config['user'])
-print("MYSQL_PASSWORD:", db_config['password'])
 print("MYSQL_DB:", db_config['database'])
 
-print("SSL CA file path:", os.path.join(os.path.dirname(__file__), 'aiven-ca.pem'))
-
-
+# Optional: Try resolving DNS (debugging only)
 import socket
-
 try:
     ip = socket.gethostbyname(db_config['host'])
     print(f"Resolved IP: {ip}")
 except Exception as e:
     print(f"DNS resolution error: {e}")
 
-
+# Establish connection
 import traceback
 
 def get_db_connection():
@@ -103,16 +94,22 @@ def register():
             msg = 'Database connection failed!'
             return render_template('register.html', msg=msg)
         cursor = conn.cursor()
+
         cursor.execute('SELECT * FROM users WHERE username = %s', (username,))
         account = cursor.fetchone()
+        cursor.execute('SELECT * FROM users WHERE email = %s', (email,))
+        email_check = cursor.fetchone()
+
         if account:
-            msg = 'Account already exists!'
+            msg = 'Username already taken!'
+        elif email_check:
+            msg = 'Email already in use!'
+        elif not re.match(r'^[A-Za-z][A-Za-z0-9_]{4,19}$', username):
+            msg = 'Username must start with a letter and be 5–20 characters (letters, numbers, underscore only)!'
         elif not re.match(r'[^@]+@[^@]+\.[^@]+', email):
             msg = 'Invalid email address!'
-        elif not re.match(r'[A-Za-z0-9]+', username):
-            msg = 'Username must contain only letters and numbers!'
-        elif len(password) < 6:
-            msg = 'Password must be at least 6 characters!'
+        elif not re.match(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{6,}$', password.decode('utf-8')):
+            msg = 'Password must contain uppercase, lowercase, number, and special character!'
         else:
             hashed = bcrypt.hashpw(password, bcrypt.gensalt()).decode('utf-8')
             cursor.execute('INSERT INTO users (username, password, email) VALUES (%s, %s, %s)', (username, hashed, email))
@@ -121,6 +118,7 @@ def register():
             cursor.close()
             conn.close()
             return redirect(url_for('login'))
+
         cursor.close()
         conn.close()
     return render_template('register.html', msg=msg)
